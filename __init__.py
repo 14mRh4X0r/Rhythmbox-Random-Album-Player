@@ -16,13 +16,13 @@ You should have received a copy of the GNU General Public License
 along with this program; if not, write to the Free Software
 Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 '''
-import gtk
-import rb
-import rhythmdb
 import random
 
-ui_str = \
-"""
+import rb
+from gi.repository import RB
+from gi.repository import GObject, Gtk, Peas
+
+ui_definition = """
 <ui>
   <menubar name="MenuBar">
     <menu name="ControlMenu" action="Control">
@@ -35,17 +35,22 @@ ui_str = \
 </ui>
 """
 
-class RandomAlbumPlugin (rb.Plugin): 
+class RandomAlbumPlugin (GObject.Object, Peas.Activatable): 
+  __gtype_name__ = 'RandomAlbumPlugin'
+
+  object = GObject.property (type = GObject.Object)
+
   def __init__(self):
-    rb.Plugin.__init__(self)
+    GObject.Object.__init__(self)
   
   def queue_random_album(self):
+    shell = self.object
     #find all of the albums in the user's library
     albums = []
-    library = self.shell.props.library_source
+    library = shell.props.library_source
     for row in library.props.query_model:
       entry = row[0]
-      album_name = self.shell.props.db.entry_get(entry, rhythmdb.PROP_ALBUM)
+      album_name = entry.get_string(RB.RhythmDBPropType.ALBUM)
       if (album_name not in albums):
         albums.append(album_name)
     
@@ -57,74 +62,72 @@ class RandomAlbumPlugin (rb.Plugin):
     song_info = []
     for row in library.props.query_model:
       entry = row[0]
-      album = self.shell.props.db.entry_get(entry, rhythmdb.PROP_ALBUM)
-      if (album == selected_album):
-        song_uri = entry.get_playback_uri()
-        track_num = self.shell.props.db.entry_get(entry, rhythmdb.PROP_TRACK_NUMBER)
-        song_info.append((song_uri, track_num))
-    
+      album = entry.get_string(RB.RhythmDBPropType.ALBUM)
+      if album == selected_album:
+        track_num = entry.get_ulong(RB.RhythmDBPropType.TRACK_NUMBER)
+        song_info.append((entry, track_num))
+
     #sort the songs
     song_info = sorted(song_info, key=lambda song_info: song_info[1])
-        
-    #add the songs to the play queue      
+
+    #add the songs to the play queue
     for info in song_info:
-      self.shell.add_to_queue(info[0])
-        
+      shell.props.queue_source.add_entry(info[0], -1)
+
   #loads the plugin  
-  def activate(self, shell):
-    self.shell = shell
-    print 'Activating Random Album Plugin'
-    
+  def do_activate(self):
     #displays the icon on the toolbar
     icon_file_name = '/usr/share/icons/gnome/22x22/apps/zen-icon.png'
-    iconsource = gtk.IconSource();
+    iconsource = Gtk.IconSource();
     iconsource.set_filename(icon_file_name)
-    iconset = gtk.IconSet()
+    iconset = Gtk.IconSet()
     iconset.add_source(iconsource)
-    iconfactory = gtk.IconFactory()
+    iconfactory = Gtk.IconFactory()
     iconfactory.add('random-album-button', iconset)
     iconfactory.add_default();
-    
-    #sets up the ui
-    action = gtk.Action('RandomAlbum', 'Random Album', 'Random Album', 'random-album-button')
-    action.connect ('activate', self.random_album, shell)
-   
-    self.action_group = gtk.ActionGroup ('RandomAlbumActionGroup')
-    self.action_group.add_action(action)
-    
-    ui_manager = shell.get_ui_manager()
-    ui_manager.insert_action_group (self.action_group)
-    self.ui_id = ui_manager.add_ui_from_string(ui_str)
-    ui_manager.ensure_update()  
-  
+
+    self.__action = Gtk.Action(name='RandomAlbum', label=_('Random Album...'),
+                              tooltip=_('Plays a random album...'),
+                              stock_id='random-album-button')
+    shell = self.object
+    self.__action.connect('activate', self.random_album, shell)
+
+    self.__action_group = Gtk.ActionGroup(name='RandomAlbumActionGroup')
+    self.__action_group.add_action(self.__action)
+    uim = shell.props.ui_manager
+    uim.insert_action_group(self.__action_group, -1)
+    uim.add_ui_from_string(ui_definition)
+
   #removed the ui modifications and unloads the plugin 
-  def deactivate(self, shell):
-    print 'Deactivating RandomAlbumPlugin'
-    ui_manager = shell.get_ui_manager()
-    ui_manager.remove_ui(self.ui_id)
-    del self.shell
-    
+  def do_deactivate(self):
+    shell = self.object
+    uim = shell.props.ui_manager
+    uim.remove_action_group(self.__action_group)
+    uim.remove_ui(self.__ui_id)
+    uim.ensure_update()
+    del self.__action_group
+    del self.__action
+
   def random_album(self, event, shell):
     #get URIs of all the songs in the queue and remove them
     print 'Removing songs from play queue'
-    play_queue = self.shell.props.queue_source
+    play_queue = shell.props.queue_source
     for row in play_queue.props.query_model:
       entry = row[0]
-      song_uri = entry.get_playback_uri()
-      shell.remove_from_queue(song_uri)
-    
-    
+      shell.props.queue_source.remove_entry(entry)
+
     #queue a random album
     self.queue_random_album()
-     
-    
+
     #start the music!(well, first stop it, but it'll start up again.)
     print 'Playing Album'
     player = shell.props.shell_player
     player.stop()
     player.set_playing_source(shell.props.queue_source)
-    player.playpause()
-      
+    # The boolean is actually unused
+    # (see shell/rb-shell-player.c:rb_shell_player_playpause())
+    player.playpause(True)
+
     #scroll to song playing
     shell.props.shell_player.play()
     library = shell.props.library_source
