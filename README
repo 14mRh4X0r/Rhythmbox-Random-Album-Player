@@ -1,5 +1,7 @@
+This version is updated to work with Rhythmbox 2.90
+
 To install, move the 'Rhythmbox-Random-Album-Player' to
 
-$HOME$/.gnome2/rhythmbox/plugins
+$HOME$/.local/share/rhythmbox/plugins
 
 Enjoy!
