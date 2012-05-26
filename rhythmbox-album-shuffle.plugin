@@ -1,7 +1,7 @@
-[RB Plugin]
+[Plugin]
 Loader=python
 Module=__init__
-IAge=1
+IAge=2
 Name=Random Album
 Description=Plays a random album from your library
 Authors=Javon Harper <javharper@gmail.com>
